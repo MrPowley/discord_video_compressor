@@ -26,6 +26,4 @@ It uses the following libraries:
 - **datetime**
 - **threading**
 
-Vous devez néanmoins télécharger ffmpeg a part et mettre **ffmpeg.exe** et **ffprobe.exe** dans le dossier racine
-
 However you have to download separately **ffmpeg.exe** and **ffprobe.exe** and put them in the root directory
