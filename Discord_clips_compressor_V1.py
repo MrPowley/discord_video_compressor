@@ -2,6 +2,8 @@ import subprocess
 import os
 import datetime
 from threading import Thread
+from tqdm import tqdm
+from ffmpeg_progress_yield import FfmpegProgress
 
 
 def nvidia():
@@ -62,17 +64,35 @@ def get_file_size(input_file_path):
     size = os.path.getsize(input_file_path)
     return size
 
-def nvidia_process(output_file, video_bitrate, audio_bitrate, input_file_path, audio_count):
-    ffmpeg_command = f'ffmpeg.exe -hwaccel cuda -i "{input_file_path}" -filter_complex "[0:a]amerge=inputs={audio_count},loudnorm=I=-16:TP=-5:LRA=11[aout]" -map 0:v -map "[aout]" -vf "scale=1280:-1" -c:v h264_nvenc -b:v {video_bitrate} -maxrate {video_bitrate} -c:a mp3 -b:a {audio_bitrate} -r 30 "output/{output_file}" -y'
-    subprocess.run(ffmpeg_command)
+def nvidia_process(output_file, video_bitrate, audio_bitrate, file, audio_count):
+    ffmpeg_command = [
+        "ffmpeg.exe", "-hwaccel", "cuda", "-i", file, "-filter_complex", f"[0:a]amerge=inputs={audio_count},loudnorm=I=-16:TP=-5:LRA=11[aout]", "-map", "0:v", "-map", "[aout]", "-vf", "scale=1920:-1", "-c:v", "h264_nvenc", "-b:v", f"{video_bitrate}", "-maxrate", f"{video_bitrate}", "-c:a", "mp3", "-b:a", f"{audio_bitrate}", "-r", "30", f"output/{output_file}", "-y"
+    ]
 
-def amd_process(output_file, video_bitrate, audio_bitrate, input_file_path, audio_count):
-    ffmpeg_command = f'ffmpeg.exe -hwaccel cuda -i "{input_file_path}" -filter_complex "[0:a]amerge=inputs={audio_count},loudnorm=I=-16:TP=-5:LRA=11[aout]" -map 0:v -map "[aout]" -vf "scale=1280:-1" -c:v h264_amf -b:v {video_bitrate} -maxrate {video_bitrate} -c:a mp3 -b:a {audio_bitrate} -r 30 "output/{output_file}" -y'
-    subprocess.run(ffmpeg_command)
+    ff = FfmpegProgress(ffmpeg_command)
+    with tqdm(total=100, position=1, desc="Progression") as pbar:
+        for progress in ff.run_command_with_progress():
+            pbar.update(progress - pbar.n)
+
+def amd_process(output_file, video_bitrate, audio_bitrate, file, audio_count):
+    ffmpeg_command = [
+        "ffmpeg.exe", "-hwaccel", "cuda", "-i", file, "-filter_complex", f"[0:a]amerge=inputs={audio_count},loudnorm=I=-16:TP=-5:LRA=11[aout]", "-map", "0:v", "-map", "[aout]", "-vf", "scale=1920:-1", "-c:v", "h264_amf", "-b:v", f"{video_bitrate}", "-maxrate", f"{video_bitrate}", "-c:a", "mp3", "-b:a", f"{audio_bitrate}", "-r", "30", f"output/{output_file}", "-y"
+    ]
+
+    ff = FfmpegProgress(ffmpeg_command)
+    with tqdm(total=100, position=1, desc="Progression") as pbar:
+        for progress in ff.run_command_with_progress():
+            pbar.update(progress - pbar.n)
 
 def cpu_process(output_file, video_bitrate, audio_bitrate, input_file_path, audio_count):
-    ffmpeg_command = f'ffmpeg.exe -i "{input_file_path}" -filter_complex "[0:a]amerge=inputs={audio_count},loudnorm=I=-16:TP=-5:LRA=11[aout]" -map 0:v -map "[aout]" -vf "scale=1280:-1" -c:v h264 -b:v {video_bitrate} -maxrate {video_bitrate} -preset veryfast -c:a mp3 -b:a {audio_bitrate} -r 30 "output/{output_file}" -y'
-    subprocess.run(ffmpeg_command)
+    ffmpeg_command = [
+        "ffmpeg.exe", "-i", file, "-filter_complex", f"[0:a]amerge=inputs={audio_count},loudnorm=I=-16:TP=-5:LRA=11[aout]", "-map", "0:v", "-map", "[aout]", "-vf", "scale=1920:-1", "-c:v", "h264", "-b:v", f"{video_bitrate}", "-maxrate", f"{video_bitrate}", "-preset", "veryfast", "-c:a", "mp3", "-b:a", f"{audio_bitrate}", "-r", "30", f"output/{output_file}", "-y"
+    ]
+
+    ff = FfmpegProgress(ffmpeg_command)
+    with tqdm(total=100, position=1, desc="Progression") as pbar:
+        for progress in ff.run_command_with_progress():
+            pbar.update(progress - pbar.n)
 
 def process(input_file):
     duration = get_video_duration(input_file)
@@ -86,7 +106,11 @@ def process(input_file):
     output_file = f'{now}_output.mp4'
 
     audio_count = get_audio_track_count(input_file)
-    os.mkdir("./output")
+
+    try:
+        os.mkdir("./output")
+    except FileExistsError:
+        pass
 
     if nvidia():
         Tnvidia = Thread(target=nvidia_process, args=(output_file, video_bitrate, audio_bitrate, input_file, audio_count))
