@@ -6,7 +6,6 @@ Ce programme en python sert a compresser des vidéos/clips pour qu'il fassent mo
 Il utilise les librairies suivantes:
 
 - **subprocess**
-- **ffprobe**
 - **os**
 - **datetime**
 - **threading**
@@ -21,7 +20,6 @@ This python program is used to compress videos/clips to make them under 25Mb to 
 It uses the following libraries:
 
 - **subprocess**
-- **ffprobe**
 - **os**
 - **datetime**
 - **threading**

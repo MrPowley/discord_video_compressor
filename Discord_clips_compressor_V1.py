@@ -1,5 +1,4 @@
 import subprocess
-from ffprobe import FFProbe
 import os
 import datetime
 from threading import Thread
@@ -40,9 +39,6 @@ def get_video_duration(input_file_path):
     except subprocess.CalledProcessError as e:
         print("Error:", e.output)
         return None
-    # duration = FFProbe(input_file_path).metadata["Duration"].split(":")
-    # duration = int(duration[0]) * 3600 + int(duration[1]) * 60 + float(duration[2])
-    # return duration
 
 def get_audio_track_count(video_path):
     command = [
@@ -65,12 +61,6 @@ def get_audio_track_count(video_path):
 def get_file_size(input_file_path):
     size = os.path.getsize(input_file_path)
     return size
-
-def get_audio_bitrate(input_file):
-    metadata = FFProbe(input_file)
-    audio_stream = next(s for s in metadata.streams if s.is_audio())
-    audio_bitrate = int(audio_stream.bit_rate)
-    return audio_bitrate
 
 def nvidia_process(output_file, video_bitrate, audio_bitrate, input_file_path, audio_count):
     ffmpeg_command = f'ffmpeg.exe -hwaccel cuda -i "{input_file_path}" -filter_complex "[0:a]amerge=inputs={audio_count},loudnorm=I=-16:TP=-5:LRA=11[aout]" -map 0:v -map "[aout]" -vf "scale=1280:-1" -c:v h264_nvenc -b:v {video_bitrate} -maxrate {video_bitrate} -c:a mp3 -b:a {audio_bitrate} -r 30 "output/{output_file}" -y'
@@ -104,17 +94,9 @@ def process(input_file):
     elif amd():
         Tamd = Thread(target=amd_process, args=(output_file, video_bitrate, audio_bitrate, input_file, audio_count))
         Tamd.start()
-        # subprocess.Popen([
-        #     "ffmpeg", "-i", input_file_path, "-filter:v", "scale=1280:-1", "-vf", "hwupload_cuda,scale_npp=1280:-1",
-        #     "-c:v", "h264_nvenc", "-b:v", f"{bitrate}k", "-c:a", "copy", output_file
-        #     ]).wait()
     else:
         Tcpu = Thread(target=cpu_process, args=(output_file, video_bitrate, audio_bitrate, input_file, audio_count))
         Tcpu.start()
-        # subprocess.Popen([
-        #     "ffmpeg", "-i", input_file_path, "-filter:v", "scale=1280:-1", "-c:v", "libx264", "-b:v", f"{bitrate}k",
-        #     "-c:a", "aac", "-b:a", f"{audio_bitrate}k", output_file
-        # ]).wait()
 
 file = input("Fichier: ")
 file = file.replace("\\", "/")
