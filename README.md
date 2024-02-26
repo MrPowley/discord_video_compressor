@@ -6,7 +6,7 @@ Ce programme en python sert a compresser des vidéos/clips pour qu'il fassent mo
 Il utilise les librairies suivantes:
 
 - **subprocess**
-- **os**
+- **pymediainfo**
 - **datetime**
 - **threading**
 
