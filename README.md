@@ -8,9 +8,7 @@ Il utilise les librairies suivantes:
 - **subprocess**
 - **pymediainfo**
 - **datetime**
-- **threading**
-
-Vous devez néanmoins télécharger ffmpeg a part et mettre **ffmpeg.exe** et **ffprobe.exe** dans le dossier racine
+- **os**
 
 # [EN] Discord video compressor
 
@@ -22,6 +20,4 @@ It uses the following libraries:
 - **subprocess**
 - **os**
 - **datetime**
-- **threading**
-
-However you have to download separately **ffmpeg.exe** and **ffprobe.exe** and put them in the root directory
+- **os**

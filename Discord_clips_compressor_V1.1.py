@@ -1,6 +1,7 @@
 import subprocess
 from pymediainfo import MediaInfo
-
+from datetime import datetime
+from os import mkdir
 
 def nvidia():
     try:
@@ -173,14 +174,13 @@ def main():
     total_output_target_size = 25 * 1024 * 1024 * 8 * 0.95
     video_bitrate = int((total_output_target_size - audio_size) / duration)
 
-    from datetime import datetime
+
     now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     output_file = f'{now}_output.mp4'
 
     process(video, output_file, video_bitrate, max_audio_bitrate, audio_track_count, resolution, framerate)
 
 def setup():
-    from os import mkdir
     try:
         mkdir("./output")
     except Exception:
