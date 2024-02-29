@@ -17,39 +17,9 @@ def amd():
     except Exception:
         return False
 
-def gpu():
-    if amd() or nvidia():
-        return True
-    else:
-        return False
-
-
-def nvidia_process(output_file, video_bitrate, audio_bitrate, input_file_path, audio_count, resolution, framerate, ffmpeg):
-    ffmpeg_command = f'{ffmpeg} -hwaccel cuda -i "{input_file_path}" -filter_complex "[0:a]amerge=inputs={audio_count},loudnorm=I=-16:TP=-5:LRA=11[aout]" -map 0:v -map "[aout]" -vf "scale={resolution}:-1" -c:v h264_nvenc -b:v {video_bitrate} -maxrate {video_bitrate} -c:a mp3 -b:a {audio_bitrate} -r {framerate} "output/{output_file}" -y'
+def process(ffmpeg, input_file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, codec, gpu):
+    ffmpeg_command = f'{ffmpeg} {gpu} -i "{input_file}" {audio_settings} -map 0:v -c:v {codec} -b:v {video_bitrate} -maxrate {video_bitrate} -minrate {video_bitrate} -vf "scale={resolution}:-1" -r {framerate} "{output_dir}/{output_file}"'
     subprocess.run(ffmpeg_command)
-
-def amd_process(output_file, video_bitrate, audio_bitrate, input_file_path, audio_count, resolution, framerate, ffmpeg):
-    ffmpeg_command = f'{ffmpeg} -hwaccel cuda -i "{input_file_path}" -filter_complex "[0:a]amerge=inputs={audio_count},loudnorm=I=-16:TP=-5:LRA=11[aout]" -map 0:v -map "[aout]" -vf "scale={resolution}:-1" -c:v h264_amf -b:v {video_bitrate} -maxrate {video_bitrate} -c:a mp3 -b:a {audio_bitrate} -r {framerate} "output/{output_file}" -y'
-    subprocess.run(ffmpeg_command)
-
-def cpu_process(output_file, video_bitrate, audio_bitrate, input_file_path, audio_count, resolution, framerate, ffmpeg):
-    ffmpeg_command = f'{ffmpeg} -i "{input_file_path}" -filter_complex "[0:a]amerge=inputs={audio_count},loudnorm=I=-16:TP=-5:LRA=11[aout]" -map 0:v -map "[aout]" -vf "scale={resolution}:-1" -c:v h264 -b:v {video_bitrate} -maxrate {video_bitrate} -preset veryfast -c:a mp3 -b:a {audio_bitrate} -r {framerate} "output/{output_file}" -y'
-    subprocess.run(ffmpeg_command)
-
-def process(input_file, output_file, video_bitrate, audio_bitrate, audio_count, resolution, framerate):
-    
-    try:
-        subprocess.check_output("ffmpeg -h")
-        ffmpeg = "ffmpeg"
-    except Exception:
-        ffmpeg = "ffmpeg.exe"
-    
-    if nvidia():
-        nvidia_process(output_file, video_bitrate, audio_bitrate, input_file, audio_count, resolution, framerate, ffmpeg)
-    elif amd():
-        amd_process(output_file, video_bitrate, audio_bitrate, input_file, audio_count, resolution, framerate, ffmpeg)
-    else:
-        cpu_process(output_file, video_bitrate, audio_bitrate, input_file, audio_count, resolution, framerate, ffmpeg)
 
 def get_video():
     file = input("Fichier: ")
@@ -158,27 +128,58 @@ def choose_quality(duration):
             case 6:
                 return 1920, 60
 
+def get_output():
+    output_name = input("Nom du fichier final (laisser vide pour le nom par défaut): ")
+    output_dir = input("Répertoire de sortie (laisser vide pour le répertoire par défaut): ")
+    return output_name, output_dir
+
 def main():
+    try:
+        output = subprocess.check_output('ffmpeg -h', text=True, stderr=subprocess.STDOUT)
+        ffmpeg = "ffmpeg"
+    except Exception:
+        ffmpeg = "ffmpeg.exe"
+
     video = get_video()
     duration, audio_track_count, max_audio_bitrate = get_metadata(video)
     
+    if audio_track_count == None and max_audio_bitrate == None:
+        audio_settings = ""
+    else:
+        audio_settings = f'-filter_complex "[0:a]amerge=inputs={audio_track_count},loudnorm=I=-16:TP=-5:LRA=11[aout]" -map "[aout]" -c:a mp3 -b:a 96k'
+
     resolution, framerate = choose_quality(duration)
 
-    # Theoretical audio bitrate
-    t_audio_bitrate = 92000
-    # Mesured output bitrate
-    e_audio_bitrate = 95261
+    output_name, output_dir = get_output()
+    
+    if not output_dir:
+        setup()
+        output_dir = "output/"
 
-    audio_size = e_audio_bitrate * duration
+    if output_name:
+        output_file = output_name + ".mp4"
+    else:
+        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        output_file = f'{now}_output.mp4'
 
-    total_output_target_size = 25 * 1024 * 1024 * 8 * 0.95
+    audio_bitrate = 96000
+    audio_size = audio_bitrate * duration
+
+    total_output_target_size = 25 * 1024 * 1024 * 8 * 0.97
     video_bitrate = int((total_output_target_size - audio_size) / duration)
 
-
-    now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_file = f'{now}_output.mp4'
-
-    process(video, output_file, video_bitrate, max_audio_bitrate, audio_track_count, resolution, framerate)
+    if nvidia():
+        codec = "h264_nvenc"
+        gpu = "-hwaccel cuda"
+    elif amd():
+        codec = "h264_amf"
+        gpu = "-hwaccel cuda"
+    else:
+        codec = "h264 -preset veryfast"
+        gpu = ""
+    
+    print(gpu)
+    process(ffmpeg, video, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, codec, gpu)
 
 def setup():
     try:
@@ -186,8 +187,5 @@ def setup():
     except Exception:
         pass
 
-
-
 if __name__ == "__main__":
-    setup()
     main()
