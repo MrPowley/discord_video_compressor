@@ -1,8 +1,9 @@
 import subprocess
 from pymediainfo import MediaInfo
 from datetime import datetime
-from os import mkdir
 from argparse import ArgumentParser, Namespace
+from os import mkdir, listdir
+from os.path import isdir
 
 def nvidia():
     try:
@@ -18,8 +19,8 @@ def amd():
     except Exception:
         return False
 
-def process(ffmpeg, input_file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, overwrite, codec, gpu):
-    ffmpeg_command = f'{ffmpeg} {gpu} -i "{input_file}" {audio_settings} -map 0:v -c:v {codec} -b:v {video_bitrate} -maxrate {video_bitrate} -minrate {video_bitrate} -vf "scale={resolution}:-1" -r {framerate} "{output_dir}/{output_file}" {overwrite}'
+def ffmpeg_process(ffmpeg, input_file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, codec, gpu):
+    ffmpeg_command = f'{ffmpeg} {gpu} -i "{input_file}" {audio_settings} -map 0:v -c:v {codec} -b:v {video_bitrate} -maxrate {video_bitrate} -minrate {video_bitrate} -vf "scale={resolution}:-1" -r {framerate} "{output_dir}/{output_file}"'
     subprocess.run(ffmpeg_command)
 
 def get_metadata(file):
@@ -41,75 +42,111 @@ def get_metadata(file):
 
     return duration, audio_track_count, max_bitrate
 
-def choose_quality(quality: int):
-    match quality:
-        case 1:
-            return 1280
-        case 2:
-            return 1600
-        case 3:
-            return 1920
-
-def main(video, quality, fluid, output_name, output_dir, overwrite):
-    try:
-        subprocess.check_output("ffmpeg -h")
-        ffmpeg = "ffmpeg"
-    except Exception:
-        ffmpeg = "ffmpeg.exe"
-    
-    duration, audio_track_count, max_audio_bitrate = get_metadata(video)
-
+def set_audio_settings(audio_track_count, max_audio_bitrate):
     if audio_track_count == None and max_audio_bitrate == None:
-        audio_settings = ""
+        return ""
     else:
-        audio_settings = f'-filter_complex "[0:a]amerge=inputs={audio_track_count},loudnorm=I=-16:TP=-5:LRA=11[aout]" -map "[aout]" -c:a mp3 -b:a 96k'
+        return f'-filter_complex "[0:a]amerge=inputs={audio_track_count},loudnorm=I=-16:TP=-5:LRA=11[aout]" -map "[aout]" -c:a mp3 -b:a 96k'
+
+def process(config, file, resolution, framerate, output_file, output_dir):
+    duration, audio_track_count, max_audio_bitrate = get_metadata(file)
+    audio_settings = set_audio_settings(audio_track_count, max_audio_bitrate)
     
-    if not quality:
-        resolution = choose_quality(1)
+    audio_size = 96000 * duration
+    video_bitrate = int((config["target_size"] - audio_size) / duration)
+
+    ffmpeg_process(config["ffmpeg"], file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, config["codec"], config["gpu"])
+
+def choose_quality(quality: int):
+    if quality:
+        match quality:
+            case 1:
+                return 1280
+            case 2:
+                return 1600
+            case 3:
+                return 1920
     else:
-        resolution = choose_quality(quality)
-    
+        return 1280
+
+def choose_framerate(fluid: bool):
     if fluid:
-        framerate = 60
+        return 60
     else:
-        framerate = 30
-    
+        return 30
+
+def choose_overwrite(overwrite: bool):
     if overwrite:
-        overwrite = "-y"
+        return "-y"
     else:
-        overwrite = ""
+        return ""
 
-    if not output_dir:
-        output_dir = "output/"
+def choose_output_dir(output_dir: str):
+    if output_dir:
+        return output_dir
+    else:
+        return "output/"
 
+def choose_output_name(output_name):
     if output_name:
-        output_file = output_name + ".mp4"
+        return output_name + ".mp4"
     else:
         now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        output_file = f'{now}_output.mp4'
-    
-    audio_bitrate = 96000
-    audio_size = audio_bitrate * duration
+        return f'{now}_output.mp4'
 
-    total_output_target_size = 25 * 1024 * 1024 * 8 * 0.97
-    video_bitrate = int((total_output_target_size - audio_size) / duration)
+def main(config, path, quality, fluid, output_name, output_dir, overwrite):
+    if isdir(path):
+
+        resolution = choose_quality(quality)
+        framerate = choose_framerate(fluid)
+        output_dir = choose_output_dir(output_dir)
+        
+        for file in listdir(path):
+            if file.endswith(config["extensions"]):
+                now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                output_file = f'{now}_output.mp4'
+                file = path + "/" + file
+                process(config, file, resolution, framerate, output_file, output_dir)
+    else:
+        resolution = choose_quality(quality)
+        framerate = choose_framerate(fluid)
+        output_dir = choose_output_dir(output_dir)
+        
+        overwrite = choose_overwrite(overwrite)
+        output_name = choose_output_name(output_name)
+        
+        process(config, file, resolution, framerate, output_file, output_dir)
+
+
+
+def get_config():
+    config = {}
+    try:
+        output = subprocess.check_output('ffmpeg -h', text=True, stderr=subprocess.STDOUT)
+        config["ffmpeg"] = "ffmpeg"
+    except Exception:
+        config["ffmpeg"] = "ffmpeg.exe"
 
     if nvidia():
-        codec = "h264_nvenc"
-        gpu = "-hwaccel cuda"
+        config["codec"] = "h264_nvenc"
+        config["gpu"] = "-hwaccel cuda"
     elif amd():
-        codec = "h264_amf"
-        gpu = "-hwaccel cuda"
+        config["codec"] = "h264_amf"
+        config["gpu"] = "-hwaccel cuda"
     else:
-        codec = "h264 -preset veryfast"
-        gpu = ""
+        config["codec"] = "h264 -preset veryfast"
+        config["gpu"] = ""
     
-    process(ffmpeg, video, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, overwrite, codec, gpu)
+    config["target_size"] = 25 * 1024 * 1024 * 8 * 0.97
+
+    config["extensions"] = (".mp4", ".mkv", ".mov", ".webm")
+
+    return config
 
 if __name__ == "__main__":
     parser = ArgumentParser()
 
-    parser.add_argument("file", help="Video path")
+    parser.add_argument("path", help="Video or directory path")
     parser.add_argument("-q", "--quality",
                         help="Video quality 1-3 (Sets the resolution : 720p, 900p, 1080p). Note that a higher resolution results in a lower global quality. The lower the setting, the higher the global video quality.",
                         type=int, choices=[1,2,3])
@@ -125,4 +162,5 @@ if __name__ == "__main__":
 
     args: Namespace = parser.parse_args()
 
-    main(args.file, args.quality, args.fluid, args.output_name, args.output_dir, args.y)
+    config = get_config()
+    main(config, args.path, args.quality, args.fluid, args.output_name, args.output_dir, args.y)

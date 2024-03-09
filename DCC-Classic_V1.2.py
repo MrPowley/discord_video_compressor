@@ -1,7 +1,8 @@
 import subprocess
 from pymediainfo import MediaInfo
 from datetime import datetime
-from os import mkdir
+from os import mkdir, listdir
+from os.path import isdir
 
 def nvidia():
     try:
@@ -17,12 +18,12 @@ def amd():
     except Exception:
         return False
 
-def process(ffmpeg, input_file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, codec, gpu):
+def ffmpeg_process(ffmpeg, input_file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, codec, gpu):
     ffmpeg_command = f'{ffmpeg} {gpu} -i "{input_file}" {audio_settings} -map 0:v -c:v {codec} -b:v {video_bitrate} -maxrate {video_bitrate} -minrate {video_bitrate} -vf "scale={resolution}:-1" -r {framerate} "{output_dir}/{output_file}"'
     subprocess.run(ffmpeg_command)
 
 def get_video():
-    file = input("Fichier: ")
+    file = input("Fichier ou dossier: ")
     file = file.replace("\\", "/")
     file = file.replace('"', '')
     file = file.replace("'", "")
@@ -41,15 +42,36 @@ def get_metadata(file):
                 tracks_bitrates.append(track_bitrate)
             except KeyError:
                 tracks_bitrates.append(92000)
-        else:
-            # FIXME Ramplacer la ligne dans le cas ou la vidéo est sans son
-            tracks_bitrates.append(64000)
+    if audio_track_count == 0:
+        return duration, None, None
     max_bitrate = max(tracks_bitrates)
 
     return duration, audio_track_count, max_bitrate
 
 def choose_quality(duration):
-    if duration < 35:
+    if duration == -1:
+        quality = int(input("""Liste de vidéos
+1 - Meilleure Qualité, résolution basse
+2 - Très bonne qualité, résolution basse, fluide
+3 - Très bonne qualité, résolution moyenne
+4 - Bonne qualité, résolution moyenne, fluide
+5 - Bonne qualité, haute résolution
+6 - Moyenne qualité, haute résolution, fluide\n"""))
+        match quality:
+            case 1:
+                return 1280, 30
+            case 2:
+                return 1280, 60
+            case 3:
+                return 1600, 30
+            case 4:
+                return 1600, 60
+            case 5:
+                return 1920, 30
+            case 6:
+                return 1920, 60
+            
+    elif duration < 35:
         quality = int(input("""Vidéo de moins de 30sec
 1 - Qualité parfaite, résolution moyenne
 2 - Qualité très bonne, résolution moyenne, fluide
@@ -128,58 +150,65 @@ def choose_quality(duration):
             case 6:
                 return 1920, 60
 
-def get_output():
-    output_name = input("Nom du fichier final (laisser vide pour le nom par défaut): ")
-    output_dir = input("Répertoire de sortie (laisser vide pour le répertoire par défaut): ")
-    return output_name, output_dir
+def get_output(is_dir):
+    if is_dir:
+        output_dir = input("Répertoire de sortie (laisser vide pour le répertoire par défaut): ")
+        return None, output_dir
+    else:
+        output_name = input("Nom du fichier final (laisser vide pour le nom par défaut): ")
+        output_dir = input("Répertoire de sortie (laisser vide pour le répertoire par défaut): ")
+        return output_name, output_dir
 
-def main():
-    try:
-        output = subprocess.check_output('ffmpeg -h', text=True, stderr=subprocess.STDOUT)
-        ffmpeg = "ffmpeg"
-    except Exception:
-        ffmpeg = "ffmpeg.exe"
-
-    video = get_video()
-    duration, audio_track_count, max_audio_bitrate = get_metadata(video)
-    
+def process(file, resolution, framerate, output_file, output_dir, is_dir):
+    duration, audio_track_count, max_audio_bitrate = get_metadata(file)
     if audio_track_count == None and max_audio_bitrate == None:
         audio_settings = ""
     else:
         audio_settings = f'-filter_complex "[0:a]amerge=inputs={audio_track_count},loudnorm=I=-16:TP=-5:LRA=11[aout]" -map "[aout]" -c:a mp3 -b:a 96k'
-
-    resolution, framerate = choose_quality(duration)
-
-    output_name, output_dir = get_output()
     
-    if not output_dir:
-        setup()
-        output_dir = "output/"
+    # Audio bitrate set to 96kb/s
+    audio_size = 96000 * duration
+    video_bitrate = int((config["target_size"] - audio_size) / duration)
 
-    if output_name:
-        output_file = output_name + ".mp4"
-    else:
-        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        output_file = f'{now}_output.mp4'
+    if not is_dir:
+        resolution, framerate = choose_quality(duration)
 
-    audio_bitrate = 96000
-    audio_size = audio_bitrate * duration
+    ffmpeg_process(config["ffmpeg"], file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, config["codec"], config["gpu"])
 
-    total_output_target_size = 25 * 1024 * 1024 * 8 * 0.97
-    video_bitrate = int((total_output_target_size - audio_size) / duration)
-
-    if nvidia():
-        codec = "h264_nvenc"
-        gpu = "-hwaccel cuda"
-    elif amd():
-        codec = "h264_amf"
-        gpu = "-hwaccel cuda"
-    else:
-        codec = "h264 -preset veryfast"
-        gpu = ""
+def main(config):
+    path = get_video()
     
-    print(gpu)
-    process(ffmpeg, video, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, codec, gpu)
+    if isdir(path):
+        is_dir = True
+        resolution, framerate = choose_quality(-1)
+        output_name, output_dir = get_output(is_dir)
+
+        if not output_dir:
+            setup()
+            output_dir = "output/"
+
+        
+        for file in listdir(path):
+            if file.endswith(config["extensions"]):
+                now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                output_file = f'{now}_output.mp4'
+                file = path + "/" + file
+                process(file, resolution, framerate, output_file, output_dir, is_dir)
+    else:
+        is_dir = False
+        output_name, output_dir = get_output(is_dir)
+
+        if not output_dir:
+            setup()
+            output_dir = "output/"
+        
+        if output_name:
+            output_file = output_name + ".mp4"
+        else:
+            now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            output_file = f'{now}_output.mp4'
+
+        process(path, None, None, output_file, output_dir, is_dir)
 
 def setup():
     try:
@@ -187,5 +216,31 @@ def setup():
     except Exception:
         pass
 
+def get_config():
+    config = {}
+    try:
+        output = subprocess.check_output('ffmpeg -h', text=True, stderr=subprocess.STDOUT)
+        config["ffmpeg"] = "ffmpeg"
+    except Exception:
+        config["ffmpeg"] = "ffmpeg.exe"
+
+    if nvidia():
+        config["codec"] = "h264_nvenc"
+        config["gpu"] = "-hwaccel cuda"
+    elif amd():
+        config["codec"] = "h264_amf"
+        config["gpu"] = "-hwaccel cuda"
+    else:
+        config["codec"] = "h264 -preset veryfast"
+        config["gpu"] = ""
+    
+    config["target_size"] = 25 * 1024 * 1024 * 8 * 0.97
+
+    config["extensions"] = video_extensions = (".mp4", ".mkv", ".mov")
+
+    return config
+    
+
 if __name__ == "__main__":
-    main()
+    config = get_config()
+    main(config)
