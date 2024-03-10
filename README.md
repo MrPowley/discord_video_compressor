@@ -8,12 +8,16 @@ Il utilise les librairies suivantes:
 - **subprocess**
 - **pymediainfo**
 - **datetime**
+- **argparse**
 - **os**
+- **gooey** (Seulement GUI)
+- **re**
+- **tqdm**
 
 Vous avez besoin d'avoir ffmpeg d'installé, ou l'executable de ffmpeg.exe à la racine du programme
 
-## Version Classique
-Interface CMD, en français, avec choix de la qualité, nom et dossier de sortie
+## Version GUI
+Interface graphique, en anglais
 
 ## Version CLI
 Arguments et syntaxe:
@@ -31,14 +35,18 @@ This python program is used to compress videos/clips to make them under 25Mb to 
 It uses the following libraries:
 
 - **subprocess**
-- **os**
+- **pymediainfo**
 - **datetime**
+- **argparse**
 - **os**
+- **gooey** (Only GUI)
+- **re**
+- **tqdm**
 
 You need to have ffmpeg installed, or the ffmpeg.exe executable in the program's root directory
 
 ## Classic Version
-CMD interface, in French, with choice of quality, output name and directory
+Graphical interface, in english
 
 ## CLI Version
 Arguments and syntax:
