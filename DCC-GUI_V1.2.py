@@ -4,8 +4,9 @@ from datetime import datetime
 from argparse import ArgumentParser, Namespace
 from os import mkdir, listdir
 from os.path import isdir
-from tqdm import tqdm
+from gooey import Gooey
 import re
+from tqdm import tqdm
 
 def nvidia():
     try:
@@ -20,28 +21,22 @@ def amd():
         return True
     except Exception:
         return False
-
-def ffmpeg_process(ffmpeg, input_file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, codec, gpu, duration):
+def ffmpeg_process(ffmpeg, input_file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, codec, gpu, duration, i):
     ffmpeg_command = f'{ffmpeg} {gpu} -i "{input_file}" {audio_settings} -map 0:v -c:v {codec} -b:v {video_bitrate} -maxrate {video_bitrate} -minrate {video_bitrate} -vf "scale={resolution}:-1" -r {framerate} "{output_dir}/{output_file}"'
+
+    process = subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,universal_newlines=True)
+    for line in process.stdout:
+        if line.startswith("frame"):
+            time_match = re.search(r'time=(\d+:\d+:\d+\.\d+)', line)
+            time_value = time_match.group(1)
+
+            time_object = datetime.strptime(time_value, "%H:%M:%S.%f")
+
+            seconds = time_object.second + time_object.minute * 60 + time_object.hour * 3600 + time_object.microsecond / 1e6
+
+            completion = seconds/duration*100
+            print(f"#{i} Progression : {round(completion)}%")
     
-    with tqdm(total=100, desc=f'Processing ', unit='%', position=0, leave=True) as pbar:
-        try:
-            process = subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,universal_newlines=True)
-            for line in process.stdout:
-                if line.startswith("frame"):
-                    time_match = re.search(r'time=(\d+:\d+:\d+\.\d+)', line)
-                    time_value = time_match.group(1)
-
-                    time_object = datetime.strptime(time_value, "%H:%M:%S.%f")
-        
-                    seconds = time_object.second + time_object.minute * 60 + time_object.hour * 3600 + time_object.microsecond / 1e6
-
-                    completion = seconds/duration*100
-                    add = round(completion - pbar.n)
-                    pbar.update(add)
-        except subprocess.CalledProcessError as e:
-            # En cas d'erreur, affiche le message d'erreur
-            print(f"Error processing: {e.output.decode()}")
 
 def get_metadata(file):
     metadata = MediaInfo.parse(file)
@@ -68,14 +63,14 @@ def set_audio_settings(audio_track_count, max_audio_bitrate):
     else:
         return f'-filter_complex "[0:a]amerge=inputs={audio_track_count},loudnorm=I=-16:TP=-5:LRA=11[aout]" -map "[aout]" -c:a mp3 -b:a 96k'
 
-def process(config, file, resolution, framerate, output_file, output_dir):
+def process(config, file, resolution, framerate, output_file, output_dir, i):
     duration, audio_track_count, max_audio_bitrate = get_metadata(file)
     audio_settings = set_audio_settings(audio_track_count, max_audio_bitrate)
     
     audio_size = 96000 * duration
     video_bitrate = int((config["target_size"] - audio_size) / duration)
 
-    ffmpeg_process(config["ffmpeg"], file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, config["codec"], config["gpu"], duration)
+    ffmpeg_process(config["ffmpeg"], file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, config["codec"], config["gpu"], duration, i)
 
 def choose_quality(quality: int):
     if quality:
@@ -120,13 +115,17 @@ def main(config, path, quality, fluid, output_name, output_dir, overwrite):
         resolution = choose_quality(quality)
         framerate = choose_framerate(fluid)
         output_dir = choose_output_dir(output_dir)
-        
+
+        i = 1
+
         for file in listdir(path):
             if file.endswith(config["extensions"]):
                 now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                 output_file = f'{now}_output.mp4'
                 file = path + "/" + file
-                process(config, file, resolution, framerate, output_file, output_dir)
+                process(config, file, resolution, framerate, output_file, output_dir, i)
+                i += 1
+                print("\n")
     else:
         resolution = choose_quality(quality)
         framerate = choose_framerate(fluid)
@@ -135,7 +134,7 @@ def main(config, path, quality, fluid, output_name, output_dir, overwrite):
         overwrite = choose_overwrite(overwrite)
         output_name = choose_output_name(output_name)
         
-        process(config, file, resolution, framerate, output_file, output_dir)
+        process(config, path, resolution, framerate, output_name, output_dir, 0)
 
 
 
@@ -163,24 +162,30 @@ def get_config():
 
     return config
 
-if __name__ == "__main__":
+@Gooey(program_name='Discord Clips Compressor',
+       default_size=(500, 675))
+def parse():
     parser = ArgumentParser()
 
-    parser.add_argument("path", help="Video or directory path")
+    parser.add_argument("path", help="Video(s) path")
     parser.add_argument("-q", "--quality",
-                        help="Video quality 1-3 (Sets the resolution : 720p, 900p, 1080p). Note that a higher resolution results in a lower global quality. The lower the setting, the higher the global video quality.",
+                        help="Resolution 1-3 [720p, 900p, 1080p] (Higher resolutions will decrease video quality)",
                         type=int, choices=[1,2,3])
     parser.add_argument("-f", "--fluid",
-                        help="Choose to have a higher framerate (With : 60fps, without : 30fps). Note that a higher framerate will negatively impact the video quality.",
+                        help="Use 60fps intead of 30 (Will decrease video quality)",
                         action="store_true")
     parser.add_argument("-on", "--output-name",
-                        help="Set an output name for the video")
+                        help="Set video output name (Only for single file compression)")
     parser.add_argument("-od", "--output-dir",
-                        help="Select an output directory for the video")
-    parser.add_argument("-y",
-                        help="Overwrite file if it allready exists")
+                        help="Set video output directory")
+    parser.add_argument("-y", "--overwrite",
+                        help="Overwrite file if it allready exists (Only for single file compression with custom name)",
+                        action="store_true")
 
     args: Namespace = parser.parse_args()
 
     config = get_config()
-    main(config, args.path, args.quality, args.fluid, args.output_name, args.output_dir, args.y)
+    main(config, args.path, args.quality, args.fluid, args.output_name, args.output_dir, args.overwrite)
+
+if __name__ == "__main__":
+    parse()

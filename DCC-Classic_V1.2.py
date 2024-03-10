@@ -3,6 +3,9 @@ from pymediainfo import MediaInfo
 from datetime import datetime
 from os import mkdir, listdir
 from os.path import isdir
+import re
+from tqdm import tqdm
+
 
 def nvidia():
     try:
@@ -18,9 +21,31 @@ def amd():
     except Exception:
         return False
 
-def ffmpeg_process(ffmpeg, input_file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, codec, gpu):
+def ffmpeg_process(ffmpeg, input_file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, codec, gpu, duration):
     ffmpeg_command = f'{ffmpeg} {gpu} -i "{input_file}" {audio_settings} -map 0:v -c:v {codec} -b:v {video_bitrate} -maxrate {video_bitrate} -minrate {video_bitrate} -vf "scale={resolution}:-1" -r {framerate} "{output_dir}/{output_file}"'
-    subprocess.run(ffmpeg_command)
+
+    with tqdm(total=100, desc=f'Processing ', unit='%', position=0, leave=True) as pbar:
+        try:
+            process = subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,universal_newlines=True)
+            for line in process.stdout:
+                if line.startswith("frame"):
+                    time_match = re.search(r'time=(\d+:\d+:\d+\.\d+)', line)
+                    time_value = time_match.group(1)
+
+                    time_object = datetime.strptime(time_value, "%H:%M:%S.%f")
+        
+                    seconds = time_object.second + time_object.minute * 60 + time_object.hour * 3600 + time_object.microsecond / 1e6
+
+                    completion = seconds/duration*100
+                    add = round(completion - pbar.n)
+
+                    if completion >= 100:
+                        pbar.update(100-completion)
+                    else:
+                        pbar.update(add)
+        except subprocess.CalledProcessError as e:
+            # En cas d'erreur, affiche le message d'erreur
+            print(f"Error processing: {e.output.decode()}")
 
 def get_video():
     file = input("Fichier ou dossier: ")
@@ -173,7 +198,7 @@ def process(file, resolution, framerate, output_file, output_dir, is_dir):
     if not is_dir:
         resolution, framerate = choose_quality(duration)
 
-    ffmpeg_process(config["ffmpeg"], file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, config["codec"], config["gpu"])
+    ffmpeg_process(config["ffmpeg"], file, video_bitrate, resolution, framerate, audio_settings, output_file, output_dir, config["codec"], config["gpu"], duration)
 
 def main(config):
     path = get_video()
