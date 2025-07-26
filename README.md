@@ -50,8 +50,8 @@ Graphical interface, in english
 
 ## CLI Version
 Arguments and syntax:
-- `-q --quality` : Video quality betwin 1 and 3 (Sets the output resolution : 720p, 900p, 1080p)
+- `-q --quality` : Video quality between 1 and 3 (Sets the output resolution : 720p, 900p, 1080p)
 - `-f --fluid` : Selects 60fps
 - `-on --output-name` : Allows you to set an output name
-- `-od --output-dir` : Allows you to set an output director
+- `-od --output-dir` : Allows you to set an output directory
 - `-y` : Overwrites output file if it allready exists
